@@ -3,6 +3,32 @@ import requests
 import discord
 from discord.ext import commands
 import os
+from datetime import datetime
+from threading import Thread
+from flask import Flask
+
+#KeepAlive con Flask
+app = Flask(__name__)
+ 
+@app.route('/')
+def home():
+    return "Bot Kai está activo! 🎴", 200
+ 
+@app.route('/health')
+def health():
+    return {"status": "alive", "timestamp": datetime.now().isoformat()}, 200
+ 
+def run_flask():
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
+ 
+def keep_alive():
+    server = Thread(target=run_flask)
+    server.daemon = True
+    server.start()
+    print(f"✅ Servidor HTTP iniciado en puerto {os.environ.get('PORT', 5000)}")
+ 
+ 
 
 intents = discord.Intents.default()
 intents.message_content = True  # Solo si activaste en el portal
