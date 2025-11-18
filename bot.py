@@ -12,7 +12,7 @@ app = Flask(__name__)
  
 @app.route('/')
 def home():
-    return "Bot Kai está activo! 🎴", 200
+    return "Bot Kai está activo!", 200
  
 @app.route('/health')
 def health():
