@@ -65,7 +65,7 @@ async def add_serie(ctx, nombre_serie):
 
 
 # Actualizamos capitulo y temporada
-@bot.command(name="updatecap")
+@bot.command(name="actualizar")
 async def update_capitulo(ctx, nombre_serie, temporada: int, capitulo: int):
     user = str(ctx.author)
     if user in progresos and nombre_serie in progresos[user]:
@@ -80,27 +80,64 @@ async def update_capitulo(ctx, nombre_serie, temporada: int, capitulo: int):
 
 
 # Marcamos serie como completada
-@bot.command(name="markcomplete")
+@bot.command(name="completada")
 async def mark_complete(ctx, nombre_serie):
-    user = str(ctx.author)
-    if user in progresos and nombre_serie in progresos[user]:
-        progresos[user][nombre_serie]["estado"] = "Completada"
-        await ctx.send(f"Marcaste la serie {nombre_serie} como completada.")
-    else:
+    user_id = str(ctx.author)
+    if user_id not in progresos:
         await ctx.send(f"Primero añade la serie con !addserie {nombre_serie}")
+        return
+
+    pendientes = progresos[user_id]["pendientes"]
+    completadas = progresos[user_id]["completadas"]
+    for i, s in enumerate(pendientes):
+        if s["name"].lower() == nombre_serie.lower():
+            s["estado"] = "Completada"
+            completadas.append(s)
+            pendientes.pop(i)
+            await ctx.send(f"Marcaste la serie {nombre_serie} como completada.")
+            return
+
+    await ctx.send(f"No encontré la serie {nombre_serie} en pendientes. Usa !addserie para añadirla.")
+
 
 
 # Consultamos el estado
 @bot.command(name="miestado")
 async def mi_estado(ctx):
-    user = str(ctx.author)
-    if user in progresos:
-        mensaje = "Tu progreso en series:\n"
-        for serie, datos in progresos[user].items():
-            mensaje += f"{serie}: Temporada {datos['temporada']} Capítulo {datos['capitulo']} - {datos['estado']}\n"
-        await ctx.send(mensaje)
-    else:
+    user_id = str(ctx.author)
+    if user_id not in progresos or (not progresos[user_id]["pendientes"] and not progresos[user_id]["completadas"]):
         await ctx.send("No has registrado ninguna serie todavía.")
+        return
+
+    embed = discord.Embed(title=f"Progreso de {ctx.author.name}", color=0x3498db)
+
+    def format_serie(s):
+        return f"Temporada {s['temporada']} Capítulo {s['capitulo']} - {s['estado']}"
+    
+    if progresos[user_id]["pendientes"]:
+        texto_pendientes = ""
+        for s in progresos[user_id]["pendientes"]:
+            texto_pendientes += f"**{s['name']}**\n{format_serie(s)}\n\n"
+        embed.add_field(name="Pendientes / En progreso", value=texto_pendientes, inline=False)
+
+    if progresos[user_id]["completadas"]:
+        texto_completadas = ""
+        for s in progresos[user_id]["completadas"]:
+            texto_completadas += f"**{s['name']}**\n{format_serie(s)}\n\n"
+        embed.add_field(name="Completadas", value=texto_completadas, inline=False)
+
+    # Opcional: agregar imagenes de las series (solo la primera como ejemplo)
+    if progresos[user_id]["pendientes"]:
+        imagen = progresos[user_id]["pendientes"][0]["image"]
+        if imagen:
+            embed.set_thumbnail(url=imagen)
+    elif progresos[user_id]["completadas"]:
+        imagen = progresos[user_id]["completadas"][0]["image"]
+        if imagen:
+            embed.set_thumbnail(url=imagen)
+
+    await ctx.send(embed=embed)
+
 
 
 # Guardamos y cargamos el progreso en json
@@ -145,14 +182,14 @@ async def list_series(ctx):
 @bot.command(name="ayuda")
 async def ayuda(ctx):
     mensaje_ayuda = (
-        "😁 Aquí tienes la lista de comandos disponibles: 😁\n"
-        "➕ !addserie <nombre> - Añade una serie a tu lista.\n"
-        "☝🏾 !updatecap <nombre> <temporada> <capítulo> - Actualiza tu progreso.\n"
-        "👌🏾 !markcomplete <nombre> - Marca la serie como completada.\n"
-        "🤔 !miestado - Muestra tu progreso actual.\n"
-        "❌ !deleteserie <nombre> - Elimina una serie de tu lista.\n"
-        "📝 !listseries - Lista todas tus series guardadas.\n"
-        "🔎 !buscar - Busca la serie que indiques.\n"
+        "😁  Aquí tienes la lista de comandos disponibles: 😁\n"
+        "➕  !addserie <nombre> - Añade una serie a tu lista.\n"
+        "☝🏾  !actualizar <nombre> <temporada> <capítulo> - Actualiza tu progreso.\n"
+        "👌🏾  !completada <nombre> - Marca la serie como completada.\n"
+        "🤔  !miestado - Muestra tu progreso actual.\n"
+        "❌  !deleteserie <nombre> - Elimina una serie de tu lista.\n"
+        "📝  !listseries - Lista todas tus series guardadas.\n"
+        "🔎  !buscar - Busca la serie que indiques.\n"
     )
     await ctx.send(mensaje_ayuda)
 
@@ -167,15 +204,16 @@ def buscar_series(nombre, max_resultados=5):
     if response.status_code == 200:
         resultados = response.json().get("results")
         if resultados:
-            # Retornamos una lista con nombre y fecha de estreno
             return [
-                (
-                    serie["name"],
-                    serie["first_air_date"][:4] if serie["first_air_date"] else "N/A",
-                )
+                {
+                    "name": serie["name"],
+                    "year": serie["first_air_date"][:4] if serie["first_air_date"] else "N/A",
+                    "image": f'https://image.tmdb.org/t/p/w500{serie["poster_path"]}' if serie.get("poster_path") else None
+                }
                 for serie in resultados[:max_resultados]
             ]
     return []
+
 
 
 # Buscamos una serie especifica
@@ -186,19 +224,18 @@ async def buscar(ctx, *, nombre_serie: str):
         await ctx.send('No se encontraron series con ese nombre.')
         return
 
-    # Construimos mensaje con las opciones enumeradas
-    mensaje_texto = "Resultados encontrados:\n"
-    emojis = ["0️⃣","1️⃣","2️⃣","3️⃣","4️⃣","5️⃣"]  # Máximo 6 opciones (0️⃣ es opción "Cancelar")
+    emojis = ["0️⃣","1️⃣","2️⃣","3️⃣","4️⃣","5️⃣"]
     max_opciones = min(len(resultados), 5)
+
+    opciones_texto = ""
     for i in range(max_opciones):
-        nombre, fecha = resultados[i]
-        mensaje_texto += f"{emojis[i+1]} {nombre} ({fecha})\n"
-    mensaje_texto += f"{emojis[0]} Cancelar búsqueda\n\n"
-    mensaje_texto += "Selecciona una opción reaccionando con el emoji correspondiente."
+        opciones_texto += f"{emojis[i+1]} {resultados[i]['name']} ({resultados[i]['year']})\n"
+    opciones_texto += f"{emojis[0]} Cancelar búsqueda\n\nSelecciona reaccionando con el emoji."
 
-    mensaje = await ctx.send(mensaje_texto)
+    embed = discord.Embed(title="Resultados encontrados", description=opciones_texto, color=0x1abc9c)
+    await ctx.send(embed=embed)
+    mensaje = await ctx.send("Selecciona la opción:")
 
-    # Añadimos reacciones para que el usuario seleccione
     for i in range(max_opciones + 1):
         await mensaje.add_reaction(emojis[i])
 
@@ -216,31 +253,39 @@ async def buscar(ctx, *, nombre_serie: str):
         await mensaje.clear_reactions()
         return
 
-    # Quitamos las reacciones para limpiar la interfaz
     try:
         await mensaje.clear_reactions()
     except discord.Forbidden:
-        pass  # Puede ocurrir si no hay permisos para eliminar reacciones
+        pass
 
     if str(reaction.emoji) == emojis[0]:
         await ctx.send("Búsqueda cancelada.")
         return
 
-    # Opción seleccionada
-    opcion = emojis.index(str(reaction.emoji))  # nos da el índice entre 1 y max_opciones
-
-    nombre_seleccionado = resultados[opcion-1][0]  # restamos 1 para índice en lista
+    opcion = emojis.index(str(reaction.emoji))
+    serie_seleccionada = resultados[opcion-1]
 
     user_id = str(ctx.author)
     if user_id not in progresos:
-        progresos[user_id] = {}
+        progresos[user_id] = {"pendientes": [], "completadas": []}
 
-    if nombre_seleccionado not in progresos[user_id]:
-        progresos[user_id][nombre_seleccionado] = {'temporada':0, 'capitulo':0, 'estado':'En progreso'}
-        guardar_progresos()
-        await ctx.send(f'Serie "{nombre_seleccionado}" añadida a tu lista.')
-    else:
-        await ctx.send(f'La serie "{nombre_seleccionado}" ya está en tu lista. \nUsa !updatecap o !markcomplete para modificar el progreso.')
+    # Verificar que no esté en ninguna lista
+    all_series = progresos[user_id]["pendientes"] + progresos[user_id]["completadas"]
+    if any(s["name"].lower() == serie_seleccionada["name"].lower() for s in all_series):
+        await ctx.send(f'La serie "{serie_seleccionada["name"]}" ya está en tu lista.')
+        return
+    
+    # Añadir a pendientes por defecto
+    progresos[user_id]["pendientes"].append({
+        "name": serie_seleccionada["name"],
+        "temporada": 0,
+        "capitulo": 0,
+        "estado": "En progreso",
+        "image": serie_seleccionada["image"]
+    })
+
+    await ctx.send(f'Serie "{serie_seleccionada["name"]}" añadida a tu lista de pendientes.')
+
 
 
         
