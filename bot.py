@@ -27,8 +27,6 @@ def keep_alive():
     server.daemon = True
     server.start()
     print(f"✅ Servidor HTTP iniciado en puerto {os.environ.get('PORT', 5000)}")
- 
- 
 
 intents = discord.Intents.default()
 intents.message_content = True  # Solo si activaste en el portal
@@ -163,4 +161,5 @@ async def buscar(ctx, *, nombre_serie: str):
         
 # Token del bot
 TOKEN=os.getenv("DISCORD_TOKEN")
+keep_alive()
 bot.run(TOKEN)
