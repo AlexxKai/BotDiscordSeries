@@ -46,6 +46,42 @@ progresos = {}
 async def on_ready():
     print(f"Bot conectado como {bot.user}")
 
+    # Lista de canales donde quieres fijar el mensaje (pon los IDs reales)
+    canales_ids = [
+        1440123514651803750,  # Canal 1
+        # Canal 2 234567890123456789,  
+        # Añade más IDs si quieres, por ejemplo para varios servidores o categorías
+    ]
+
+    mensaje_texto = "Pon el comando `!ayuda` para saber qué hacer."
+
+    for canal_id in canales_ids:
+        canal = bot.get_channel(canal_id)
+        if canal:
+            try:
+                # Obtener mensajes fijados actuales
+                mensajes_fijados = await canal.pins()
+
+                # Desfijar y borrar mensajes antiguos con el mismo texto para evitar duplicados
+                for msg in mensajes_fijados:
+                    if msg.author == bot.user and msg.content == mensaje_texto:
+                        try:
+                            await msg.unpin()
+                            await msg.delete()
+                        except Exception as e:
+                            print(f"Error al quitar mensaje fijado antiguo en canal {canal.name}: {e}")
+
+                # Enviar y fijar nuevo mensaje
+                mensaje = await canal.send(mensaje_texto)
+                await mensaje.pin()
+                print(f"Mensaje fijado en el canal {canal.name}")
+
+            except Exception as e:
+                print(f"Error gestionando canal {canal_id}: {e}")
+        else:
+            print(f"Canal con ID {canal_id} no encontrado")
+
+
 
 # Añadimos serie
 @bot.command(name="addserie")
