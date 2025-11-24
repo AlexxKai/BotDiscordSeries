@@ -86,24 +86,6 @@ async def on_ready():
             print(f"Canal con ID {canal_id} no encontrado")
 
 
-
-# Añadimos serie de forma manual, aunque no este en el registro de la API
-@bot.command(name="addserie")
-async def add_serie(ctx, nombre_serie):
-    user = str(ctx.author)
-    if user not in progresos:
-        progresos[user] = {}
-    if nombre_serie in progresos[user]:
-        await ctx.send(f"La serie {nombre_serie} ya está en tu lista.")
-    else:
-        progresos[user][nombre_serie] = {
-            "temporada": 0,
-            "capitulo": 0,
-            "estado": "En progreso",
-        }
-        await ctx.send(f"Serie {nombre_serie} añadida a tu lista.")
-
-
 # Actualizamos capitulo y temporada
 @bot.command(name="actualizar")
 async def update_capitulo(ctx, *, args: str):
@@ -126,7 +108,7 @@ async def update_capitulo(ctx, *, args: str):
 
     # Ahora busca y actualiza la serie en pendientes o completadas
     if user not in progresos:
-        await ctx.send(f"No tienes series registradas. Añade una primero con !addserie")
+        await ctx.send(f"No tienes series registradas. Búscala primero con !buscar")
         return
 
     # Buscar en pendientes
@@ -150,7 +132,7 @@ async def update_capitulo(ctx, *, args: str):
             await ctx.send(f"Actualizado '{nombre_serie}' en completadas: Temporada {temporada}, Capítulo {capitulo}")
             return
 
-    await ctx.send(f"No encontré la serie {nombre_serie} en tu lista. Añádela primero con !addserie")
+    await ctx.send(f"No encontré la serie, añádela primero a tu lista con '!buscar' {nombre_serie}.")
 
 
 
@@ -159,7 +141,7 @@ async def update_capitulo(ctx, *, args: str):
 async def mark_complete(ctx, *, nombre_serie: str):
     user_id = str(ctx.author)
     if user_id not in progresos:
-        await ctx.send(f"Primero añade la serie con !addserie {nombre_serie}")
+        await ctx.send(f"Primero añade la serie con '!buscar' {nombre_serie}")
         return
 
     pendientes = progresos[user_id].get("pendientes", [])
@@ -183,7 +165,7 @@ async def mark_complete(ctx, *, nombre_serie: str):
             await ctx.send(f"La serie {nombre_serie} ya estaba completada. Estado actualizado.")
             return
 
-    await ctx.send(f"No encontré la serie {nombre_serie} en pendientes. Usa !addserie para añadirla.")
+    await ctx.send(f"No encontré la serie {nombre_serie} en pendientes. Usa '!buscar' para añadirla.")
 
 
 
@@ -266,30 +248,15 @@ async def delete_serie(ctx, *, nombre_serie: str):
     await ctx.send("Esa serie no está en tu lista.")
 
 
-
-
-# Listamos series
-@bot.command(name="listseries")
-async def list_series(ctx):
-    user = str(ctx.author)
-    if user in progresos and progresos[user]:
-        lista = ", ".join(progresos[user].keys())
-        await ctx.send(f"Tus series: {lista}")
-    else:
-        await ctx.send("No tienes series registradas.")
-
-
 # Comando de ayuda TODO
 @bot.command(name="ayuda")
 async def ayuda(ctx):
     mensaje_ayuda = (
         "😁  Aquí tienes la lista de comandos disponibles: 😁\n"
-        "➕  !addserie <nombre> - Añade una serie a tu lista.\n"
         "☝🏾  !actualizar <nombre> <temporada> <capítulo> - Actualiza tu progreso.\n"
         "👌🏾  !completada <nombre> - Marca la serie como completada.\n"
         "🤔  !miestado - Muestra tu progreso actual.\n"
         "❌  !borrarserie <nombre> - Elimina una serie de tu lista.\n"
-        "📝  !listseries - Lista todas tus series guardadas.\n"
         "🔎  !buscar <texto> - Busca la serie que indiques.\n"
     )
     await ctx.send(mensaje_ayuda)
