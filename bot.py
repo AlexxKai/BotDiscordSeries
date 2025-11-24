@@ -1,11 +1,13 @@
 import json
 import requests
 import discord
+import asyncio
 from discord.ext import commands
 import os
 from datetime import datetime
 from threading import Thread
 from flask import Flask
+
 
 # KeepAlive con Flask
 app = Flask(__name__)
@@ -60,7 +62,9 @@ async def on_ready():
         if canal:
             try:
                 # Obtener mensajes fijados actuales
-                mensajes_fijados = await canal.pins()
+                mensajes_fijados = []
+                async for msg in canal.pins():
+                    mensajes_fijados.append(msg)
 
                 # Desfijar y borrar mensajes antiguos con el mismo texto para evitar duplicados
                 for msg in mensajes_fijados:
@@ -254,7 +258,6 @@ page_size = 5
 numeros = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
 otros = ["⬅️", "➡️", "0️⃣"]
 
-
 def crear_embed_unico(resultados, pagina):
     start = pagina * page_size
     end = start + page_size
@@ -266,11 +269,7 @@ def crear_embed_unico(resultados, pagina):
     )
 
     texto = ""
-    numeros = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
-
     for i, serie in enumerate(opciones):
-        # Usamos markdown para enlace con imagen pequeña
-        # Discord no muestra imágenes en línea directas, pero el link puede abrir la imagen al clicar
         puntuacion = serie.get("vote_average", 0.0)
         puntuacion_fmt = f"{puntuacion:.1f}" if isinstance(puntuacion, (float, int)) else "N/A"
         imagen_url = serie.get("image") or "https://via.placeholder.com/50x70?text=NA"
@@ -278,11 +277,15 @@ def crear_embed_unico(resultados, pagina):
         texto += f"{numeros[i]} **[{serie['name']}]({imagen_url})** - ⭐ {puntuacion_fmt}\n"
 
     embed.description = texto
-    embed.set_footer(text="Selecciona con las reacciones, ⬅️ y ➡️ para navegar entre páginas y 0️⃣ para cancelar.")
+    embed.set_footer(text="Selecciona con las reacciones. ⬅️ y ➡️ para navegar páginas. 0️⃣ para cancelar.")
     return embed, len(opciones)
 
 @bot.command(name='buscar')
-async def buscar(ctx, *, nombre_serie: str):
+async def buscar(ctx, *, nombre_serie: str = None):
+    if not nombre_serie:
+        await ctx.send("Debes escribir el nombre de la serie después del comando, por ejemplo:\n`!buscar Friends`")
+        return
+
     try:
         resultados = buscar_series(nombre_serie)
     except Exception as e:
@@ -304,13 +307,10 @@ async def buscar(ctx, *, nombre_serie: str):
         embed, total_opciones = crear_embed_unico(resultados, pagina_actual)
         mensaje = await ctx.send(embed=embed)
 
-        # Reacciones: filas numéricas + control
-        numeros = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
-        otros = ["⬅️", "➡️", "0️⃣"]
         opciones_emoji = numeros[:total_opciones] + otros
-
         for emoji in opciones_emoji:
             await mensaje.add_reaction(emoji)
+            await asyncio.sleep(0.3)
 
         def check(reaction, user):
             return (
@@ -359,17 +359,15 @@ async def buscar(ctx, *, nombre_serie: str):
                         await ctx.send(f'Serie "{serie_seleccionada["name"]}" añadida a tu lista de pendientes.')
                     await mensaje.clear_reactions()
                     return
-            else:
-                continue
 
             embed, total_opciones = crear_embed_unico(resultados, pagina_actual)
             await mensaje.edit(embed=embed)
 
-            # Actualizar reacciones
-            await mensaje.clear_reactions()
             opciones_emoji = numeros[:total_opciones] + otros
+            await mensaje.clear_reactions()
             for e in opciones_emoji:
                 await mensaje.add_reaction(e)
+                await asyncio.sleep(0.3)  # Pausa para evitar rate limited
 
     except Exception as e:
         await ctx.send(f"Error en la interacción: {e}")
