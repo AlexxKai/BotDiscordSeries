@@ -48,9 +48,9 @@ async def on_ready():
 
     # Lista de canales donde quieres fijar el mensaje (pon los IDs reales)
     canales_ids = [
-        1440123514651803750,  # Canal 1
+        1442214865438638130,  # Canal 1
         # Canal 2 234567890123456789,  
-        # Añade más IDs si quieres, por ejemplo para varios servidores o categorías
+        # Añade más IDs para varios servidores o categorías, pero a ver como en auto xq sino no funciona TODO
     ]
 
     mensaje_texto = "Pon el comando `!ayuda` para saber qué hacer."
@@ -83,7 +83,7 @@ async def on_ready():
 
 
 
-# Añadimos serie
+# Añadimos serie de forma manual, aunque no este en el registro de la API
 @bot.command(name="addserie")
 async def add_serie(ctx, nombre_serie):
     user = str(ctx.author)
@@ -162,7 +162,7 @@ async def mi_estado(ctx):
             texto_completadas += f"**{s['name']}**\n{format_serie(s)}\n\n"
         embed.add_field(name="Completadas", value=texto_completadas, inline=False)
 
-    # Opcional: agregar imagenes de las series (solo la primera como ejemplo)
+    # Agregar imagenes de las series, ahora solo la primera, TODO
     if progresos[user_id]["pendientes"]:
         imagen = progresos[user_id]["pendientes"][0]["image"]
         if imagen:
@@ -176,7 +176,7 @@ async def mi_estado(ctx):
 
 
 
-# Guardamos y cargamos el progreso en json
+# Guardamos y cargamos el progreso en json, solo funciona en local
 def guardar_progresos():
     with open("progresos.json", "w") as f:
         json.dump(progresos, f)
@@ -214,7 +214,7 @@ async def list_series(ctx):
         await ctx.send("No tienes series registradas.")
 
 
-# Comando de ayuda
+# Comando de ayuda TODO
 @bot.command(name="ayuda")
 async def ayuda(ctx):
     mensaje_ayuda = (
@@ -233,9 +233,8 @@ async def ayuda(ctx):
 # apikey del buscador
 API_KEY = "54157f0247cd582245af02be17b7aee3"
 
-
-def buscar_series(nombre, max_resultados=5):
-    url = f"https://api.themoviedb.org/3/search/tv?api_key={API_KEY}&query={nombre}"
+def buscar_series(nombre):
+    url = f"https://api.themoviedb.org/3/search/tv?api_key={API_KEY}&query={nombre}&language=es-ES"
     response = requests.get(url)
     if response.status_code == 200:
         resultados = response.json().get("results")
@@ -243,90 +242,139 @@ def buscar_series(nombre, max_resultados=5):
             return [
                 {
                     "name": serie["name"],
-                    "year": serie["first_air_date"][:4] if serie["first_air_date"] else "N/A",
-                    "image": f'https://image.tmdb.org/t/p/w500{serie["poster_path"]}' if serie.get("poster_path") else None
+                    "year": serie["first_air_date"][:4] if serie.get("first_air_date") else "N/A",
+                    "image": f'https://image.tmdb.org/t/p/w500{serie["poster_path"]}' if serie.get("poster_path") else None,
+                    "vote_average": serie.get("vote_average", 0.0)
                 }
-                for serie in resultados[:max_resultados]
+                for serie in resultados
             ]
     return []
 
+page_size = 5
+numeros = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
+otros = ["⬅️", "➡️", "0️⃣"]
 
 
-# Buscamos una serie especifica
+def crear_embed_unico(resultados, pagina):
+    start = pagina * page_size
+    end = start + page_size
+    opciones = resultados[start:end]
+
+    embed = discord.Embed(
+        title=f"Resultados encontrados (página {pagina+1}/{(len(resultados)-1)//page_size + 1})",
+        color=0x1abc9c
+    )
+
+    texto = ""
+    numeros = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
+
+    for i, serie in enumerate(opciones):
+        # Usamos markdown para enlace con imagen pequeña
+        # Discord no muestra imágenes en línea directas, pero el link puede abrir la imagen al clicar
+        puntuacion = serie.get("vote_average", 0.0)
+        puntuacion_fmt = f"{puntuacion:.1f}" if isinstance(puntuacion, (float, int)) else "N/A"
+        imagen_url = serie.get("image") or "https://via.placeholder.com/50x70?text=NA"
+        
+        texto += f"{numeros[i]} **[{serie['name']}]({imagen_url})** - ⭐ {puntuacion_fmt}\n"
+
+    embed.description = texto
+    embed.set_footer(text="Selecciona con las reacciones, ⬅️ y ➡️ para navegar entre páginas y 0️⃣ para cancelar.")
+    return embed, len(opciones)
+
 @bot.command(name='buscar')
 async def buscar(ctx, *, nombre_serie: str):
-    resultados = buscar_series(nombre_serie)
+    try:
+        resultados = buscar_series(nombre_serie)
+    except Exception as e:
+        await ctx.send(f"Error consultando la API: {e}")
+        return
+
     if not resultados:
-        await ctx.send('No se encontraron series con ese nombre.')
+        await ctx.send("No se encontraron series con ese nombre.")
         return
-
-    emojis = ["0️⃣","1️⃣","2️⃣","3️⃣","4️⃣","5️⃣"]
-    max_opciones = min(len(resultados), 5)
-
-    opciones_texto = ""
-    for i in range(max_opciones):
-        opciones_texto += f"{emojis[i+1]} {resultados[i]['name']} ({resultados[i]['year']})\n"
-    opciones_texto += f"{emojis[0]} Cancelar búsqueda\n\nSelecciona reaccionando con el emoji."
-
-    embed = discord.Embed(title="Resultados encontrados", description=opciones_texto, color=0x1abc9c)
-    await ctx.send(embed=embed)
-    mensaje = await ctx.send("Selecciona la opción:")
-
-    for i in range(max_opciones + 1):
-        await mensaje.add_reaction(emojis[i])
-
-    def check(reaction, user):
-        return (
-            user == ctx.author
-            and reaction.message.id == mensaje.id
-            and str(reaction.emoji) in emojis[:max_opciones+1]
-        )
-
-    try:
-        reaction, user = await bot.wait_for('reaction_add', timeout=120.0, check=check)
-    except asyncio.TimeoutError:
-        await mensaje.edit(content="⏰ Tiempo de selección agotado. Usa !buscar para intentarlo de nuevo.")
-        await mensaje.clear_reactions()
-        return
-
-    try:
-        await mensaje.clear_reactions()
-    except discord.Forbidden:
-        pass
-
-    if str(reaction.emoji) == emojis[0]:
-        await ctx.send("Búsqueda cancelada.")
-        return
-
-    opcion = emojis.index(str(reaction.emoji))
-    serie_seleccionada = resultados[opcion-1]
 
     user_id = str(ctx.author)
     if user_id not in progresos:
         progresos[user_id] = {"pendientes": [], "completadas": []}
 
-    # Verificar que no esté en ninguna lista
-    all_series = progresos[user_id]["pendientes"] + progresos[user_id]["completadas"]
-    if any(s["name"].lower() == serie_seleccionada["name"].lower() for s in all_series):
-        await ctx.send(f'La serie "{serie_seleccionada["name"]}" ya está en tu lista.')
-        return
-    
-    # Añadir a pendientes por defecto
-    progresos[user_id]["pendientes"].append({
-        "name": serie_seleccionada["name"],
-        "temporada": 0,
-        "capitulo": 0,
-        "estado": "En progreso",
-        "image": serie_seleccionada["image"]
-    })
+    total_pages = (len(resultados) - 1) // page_size + 1
+    pagina_actual = 0
 
-    await ctx.send(f'Serie "{serie_seleccionada["name"]}" añadida a tu lista de pendientes.')
+    try:
+        embed, total_opciones = crear_embed_unico(resultados, pagina_actual)
+        mensaje = await ctx.send(embed=embed)
 
+        # Reacciones: filas numéricas + control
+        numeros = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
+        otros = ["⬅️", "➡️", "0️⃣"]
+        opciones_emoji = numeros[:total_opciones] + otros
 
+        for emoji in opciones_emoji:
+            await mensaje.add_reaction(emoji)
 
-        
-        
-        
+        def check(reaction, user):
+            return (
+                user == ctx.author and
+                reaction.message.id == mensaje.id and
+                str(reaction.emoji) in opciones_emoji
+            )
+
+        while True:
+            try:
+                reaction, user = await bot.wait_for('reaction_add', timeout=120.0, check=check)
+            except asyncio.TimeoutError:
+                await mensaje.clear_reactions()
+                await ctx.send("⏰ Tiempo de selección agotado. Usa !buscar para intentarlo de nuevo.")
+                return
+
+            emoji = str(reaction.emoji)
+            await mensaje.remove_reaction(reaction.emoji, user)
+
+            if emoji == "0️⃣":
+                await mensaje.clear_reactions()
+                await ctx.send("Búsqueda cancelada.")
+                return
+
+            elif emoji == "➡️" and pagina_actual < total_pages - 1:
+                pagina_actual += 1
+            elif emoji == "⬅️" and pagina_actual > 0:
+                pagina_actual -= 1
+            elif emoji in numeros:
+                idx = numeros.index(emoji)
+                start = pagina_actual * page_size
+                if start + idx < len(resultados):
+                    serie_seleccionada = resultados[start + idx]
+                    all_series = progresos[user_id]["pendientes"] + progresos[user_id]["completadas"]
+                    if any(s["name"].lower() == serie_seleccionada["name"].lower() for s in all_series):
+                        await ctx.send(f'La serie "{serie_seleccionada["name"]}" ya está en tu lista.')
+                    else:
+                        progresos[user_id]["pendientes"].append({
+                            "name": serie_seleccionada["name"],
+                            "temporada": 0,
+                            "capitulo": 0,
+                            "estado": "En progreso",
+                            "image": serie_seleccionada["image"]
+                        })
+                        guardar_progresos()
+                        await ctx.send(f'Serie "{serie_seleccionada["name"]}" añadida a tu lista de pendientes.')
+                    await mensaje.clear_reactions()
+                    return
+            else:
+                continue
+
+            embed, total_opciones = crear_embed_unico(resultados, pagina_actual)
+            await mensaje.edit(embed=embed)
+
+            # Actualizar reacciones
+            await mensaje.clear_reactions()
+            opciones_emoji = numeros[:total_opciones] + otros
+            for e in opciones_emoji:
+                await mensaje.add_reaction(e)
+
+    except Exception as e:
+        await ctx.send(f"Error en la interacción: {e}")
+
+   
 # Token del bot
 TOKEN = os.getenv("DISCORD_TOKEN")
 keep_alive()
