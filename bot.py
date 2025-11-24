@@ -106,35 +106,81 @@ async def add_serie(ctx, nombre_serie):
 
 # Actualizamos capitulo y temporada
 @bot.command(name="actualizar")
-async def update_capitulo(ctx, nombre_serie, temporada: int, capitulo: int):
+async def update_capitulo(ctx, *, args: str):
     user = str(ctx.author)
-    if user in progresos and nombre_serie in progresos[user]:
-        progresos[user][nombre_serie]["temporada"] = temporada
-        progresos[user][nombre_serie]["capitulo"] = capitulo
-        progresos[user][nombre_serie]["estado"] = "En progreso"
-        await ctx.send(
-            f"Actualizado {nombre_serie}: Temporada {temporada}, Capítulo {capitulo}"
-        )
-    else:
-        await ctx.send(f"Primero añade la serie con !addserie {nombre_serie}")
+
+    # args tiene: "nombre de serie con espacios 1 5"
+    # Separamos por espacio, los dos últimos son temporada y capítulo, el resto es nombre serie
+    try:
+        partes = args.rsplit(" ", 2)  # máximo 2 splits desde derecha
+        if len(partes) < 3:
+            await ctx.send("Uso incorrecto. Formato: !actualizar <nombre serie> <temporada> <capítulo>")
+            return
+
+        nombre_serie = partes[0]
+        temporada = int(partes[1])
+        capitulo = int(partes[2])
+    except ValueError:
+        await ctx.send("La temporada y el capítulo deben ser números enteros.")
+        return
+
+    # Ahora busca y actualiza la serie en pendientes o completadas
+    if user not in progresos:
+        await ctx.send(f"No tienes series registradas. Añade una primero con !addserie")
+        return
+
+    # Buscar en pendientes
+    for serie in progresos[user]["pendientes"]:
+        if serie["name"].lower() == nombre_serie.lower():
+            serie["temporada"] = temporada
+            serie["capitulo"] = capitulo
+            serie["estado"] = "En progreso"
+            guardar_progresos()
+            await ctx.send(f"Actualizado '{nombre_serie}' en pendientes: Temporada {temporada}, Capítulo {capitulo}")
+            return
+
+    # Buscar en completadas
+    for serie in progresos[user]["completadas"]:
+        if serie["name"].lower() == nombre_serie.lower():
+            serie["temporada"] = temporada
+            serie["capitulo"] = capitulo
+            # Si actualizas capítulos en completadas, tal vez quieras cambiar estado a "En progreso"
+            serie["estado"] = "En progreso"
+            guardar_progresos()
+            await ctx.send(f"Actualizado '{nombre_serie}' en completadas: Temporada {temporada}, Capítulo {capitulo}")
+            return
+
+    await ctx.send(f"No encontré la serie {nombre_serie} en tu lista. Añádela primero con !addserie")
+
 
 
 # Marcamos serie como completada
 @bot.command(name="completada")
-async def mark_complete(ctx, nombre_serie):
+async def mark_complete(ctx, *, nombre_serie: str):
     user_id = str(ctx.author)
     if user_id not in progresos:
         await ctx.send(f"Primero añade la serie con !addserie {nombre_serie}")
         return
 
-    pendientes = progresos[user_id]["pendientes"]
-    completadas = progresos[user_id]["completadas"]
+    pendientes = progresos[user_id].get("pendientes", [])
+    completadas = progresos[user_id].get("completadas", [])
+
+    # Buscar y mover de pendientes a completadas
     for i, s in enumerate(pendientes):
         if s["name"].lower() == nombre_serie.lower():
             s["estado"] = "Completada"
             completadas.append(s)
             pendientes.pop(i)
+            guardar_progresos()
             await ctx.send(f"Marcaste la serie {nombre_serie} como completada.")
+            return
+
+    # Si ya está en completadas, solo actualiza el estado (por si la actualizaste y no marcaste)
+    for s in completadas:
+        if s["name"].lower() == nombre_serie.lower():
+            s["estado"] = "Completada"
+            guardar_progresos()
+            await ctx.send(f"La serie {nombre_serie} ya estaba completada. Estado actualizado.")
             return
 
     await ctx.send(f"No encontré la serie {nombre_serie} en pendientes. Usa !addserie para añadirla.")
@@ -145,38 +191,36 @@ async def mark_complete(ctx, nombre_serie):
 @bot.command(name="miestado")
 async def mi_estado(ctx):
     user_id = str(ctx.author)
-    if user_id not in progresos or (not progresos[user_id]["pendientes"] and not progresos[user_id]["completadas"]):
+    if user_id not in progresos or (not progresos[user_id].get("pendientes") and not progresos[user_id].get("completadas")):
         await ctx.send("No has registrado ninguna serie todavía.")
         return
 
     embed = discord.Embed(title=f"Progreso de {ctx.author.name}", color=0x3498db)
 
-    def format_serie(s):
-        return f"Temporada {s['temporada']} Capítulo {s['capitulo']} - {s['estado']}"
-    
-    if progresos[user_id]["pendientes"]:
+    def serie_a_texto(s, indice):
+        img_url = s.get("image") or "https://via.placeholder.com/50x70?text=NA"
+        estado = s.get("estado", "Desconocido")
+        temp = s.get("temporada", 0)
+        cap = s.get("capitulo", 0)
+        return f"{indice}. **[{s['name']}]({img_url})**\nTemporada {temp} Capítulo {cap} - {estado}\n"
+
+    pendientes = progresos[user_id].get("pendientes", [])
+    completadas = progresos[user_id].get("completadas", [])
+
+    if pendientes:
         texto_pendientes = ""
-        for s in progresos[user_id]["pendientes"]:
-            texto_pendientes += f"**{s['name']}**\n{format_serie(s)}\n\n"
+        for i, s in enumerate(pendientes, start=1):
+            texto_pendientes += serie_a_texto(s, i) + "\n"
         embed.add_field(name="Pendientes / En progreso", value=texto_pendientes, inline=False)
 
-    if progresos[user_id]["completadas"]:
+    if completadas:
         texto_completadas = ""
-        for s in progresos[user_id]["completadas"]:
-            texto_completadas += f"**{s['name']}**\n{format_serie(s)}\n\n"
+        for i, s in enumerate(completadas, start=1):
+            texto_completadas += serie_a_texto(s, i) + "\n"
         embed.add_field(name="Completadas", value=texto_completadas, inline=False)
 
-    # Agregar imagenes de las series, ahora solo la primera, TODO
-    if progresos[user_id]["pendientes"]:
-        imagen = progresos[user_id]["pendientes"][0]["image"]
-        if imagen:
-            embed.set_thumbnail(url=imagen)
-    elif progresos[user_id]["completadas"]:
-        imagen = progresos[user_id]["completadas"][0]["image"]
-        if imagen:
-            embed.set_thumbnail(url=imagen)
-
     await ctx.send(embed=embed)
+
 
 
 
