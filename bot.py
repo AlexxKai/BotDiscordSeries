@@ -196,15 +196,32 @@ def cargar_progresos():
 
 
 # Borramos serie
-@bot.command(name="deleteserie")
-async def delete_serie(ctx, nombre_serie):
+@bot.command(name="borrarserie")
+async def delete_serie(ctx, *, nombre_serie: str):
     user = str(ctx.author)
-    if user in progresos and nombre_serie in progresos[user]:
-        del progresos[user][nombre_serie]
-        guardar_progresos()
-        await ctx.send(f"Serie {nombre_serie} eliminada de tu lista.")
-    else:
-        await ctx.send("Esa serie no está en tu lista.")
+    if user in progresos:
+        pendientes = progresos[user].get("pendientes", [])
+        completadas = progresos[user].get("completadas", [])
+
+        # Buscamos en pendientes
+        for i, serie in enumerate(pendientes):
+            if serie["name"].lower() == nombre_serie.lower():
+                pendientes.pop(i)
+                guardar_progresos()
+                await ctx.send(f"Serie {nombre_serie} eliminada de tu lista (pendientes).")
+                return
+
+        # Buscamos en completadas        
+        for i, serie in enumerate(completadas):
+            if serie["name"].lower() == nombre_serie.lower():
+                completadas.pop(i)
+                guardar_progresos()
+                await ctx.send(f"Serie {nombre_serie} eliminada de tu lista (completadas).")
+                return
+
+    await ctx.send("Esa serie no está en tu lista.")
+
+
 
 
 # Listamos series
@@ -227,9 +244,9 @@ async def ayuda(ctx):
         "☝🏾  !actualizar <nombre> <temporada> <capítulo> - Actualiza tu progreso.\n"
         "👌🏾  !completada <nombre> - Marca la serie como completada.\n"
         "🤔  !miestado - Muestra tu progreso actual.\n"
-        "❌  !deleteserie <nombre> - Elimina una serie de tu lista.\n"
+        "❌  !borrarserie <nombre> - Elimina una serie de tu lista.\n"
         "📝  !listseries - Lista todas tus series guardadas.\n"
-        "🔎  !buscar - Busca la serie que indiques.\n"
+        "🔎  !buscar <texto> - Busca la serie que indiques.\n"
     )
     await ctx.send(mensaje_ayuda)
 
